@@ -1,0 +1,78 @@
+name: "GitHub App Authentication & Token Retrieval"
+description: "Generates an installation token for a GitHub App with any permissions."
+
+inputs:
+  app_id:
+    description: "GitHub App ID"
+    required: true
+  private_key:
+    description: "Private key for the GitHub App"
+    required: true
+  organisation:
+    description: "GitHub organisation or account login where the app is installed"
+    required: true
+
+outputs:
+  token:
+    description: "Installation token for the GitHub App"
+    value: ${{ steps.install_token.outputs.TOKEN }}
+
+runs:
+  using: "composite"
+  steps:
+    # Step 1: Generate JWT for the GitHub App
+    - name: Generate JWT
+      id: jwt
+      shell: bash
+      run: |
+        # Write the private key to a file
+        echo "${{ inputs.private_key }}" > private-key.pem
+        # Remove any Windows-style carriage returns
+        sed -i 's/\r$//g' private-key.pem
+
+        # Create JWT header & payload
+        HEADER=$(echo -n '{"alg":"RS256","typ":"JWT"}' | openssl base64 -A | tr '+/' '-_' | tr -d '=')
+        IAT=$(date +%s)
+        IAT=$((IAT - 60))  # Issued 60 seconds in the past
+        EXP=$((IAT + 600)) # Expires in 10 minutes (600 seconds)
+        PAYLOAD=$(printf '{"iat":%d,"exp":%d,"iss":"%s"}' $IAT $EXP "${{ inputs.app_id }}" | openssl base64 -A | tr '+/' '-_' | tr -d '=')
+
+        HEADER_PAYLOAD="$HEADER.$PAYLOAD"
+        SIGNATURE=$(echo -n "$HEADER_PAYLOAD" | openssl dgst -sha256 -sign private-key.pem | openssl base64 -A | tr '+/' '-_' | tr -d '=')
+        echo "JWT=$HEADER_PAYLOAD.$SIGNATURE" >> $GITHUB_ENV
+
+    # Step 2: Retrieve Installation ID for the App
+    - name: Get Installation ID
+      id: install_id
+      shell: bash
+      run: |
+        RESPONSE=$(curl -s -X GET \
+          -H "Authorization: Bearer $JWT" \
+          -H "Accept: application/vnd.github+json" \
+          https://api.github.com/app/installations)
+
+        INSTALLATION_ID=$(echo "$RESPONSE" | jq -r '.[] | select(.account.login=="${{ inputs.organisation }}") | .id')
+        if [ "$INSTALLATION_ID" == "null" ] || [ -z "$INSTALLATION_ID" ]; then
+          echo "Error: Installation ID not found for organisation '${{ inputs.organisation }}'."
+          echo "Response: $RESPONSE"
+          exit 1
+        fi
+        echo "INSTALLATION_ID=$INSTALLATION_ID" >> $GITHUB_ENV
+
+    # Step 3: Retrieve Installation Token
+    - name: Get Installation Token
+      id: install_token
+      shell: bash
+      run: |
+        TOKEN_RESPONSE=$(curl -s -X POST \
+          -H "Authorization: Bearer $JWT" \
+          -H "Accept: application/vnd.github+json" \
+          https://api.github.com/app/installations/$INSTALLATION_ID/access_tokens)
+
+        TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.token')
+        if [ "$TOKEN" == "null" ] || [ -z "$TOKEN" ]; then
+          echo "Error: Failed to retrieve installation token."
+          echo "Response: $TOKEN_RESPONSE"
+          exit 1
+        fi
+        echo "TOKEN=$TOKEN" >> $GITHUB_OUTPUT
