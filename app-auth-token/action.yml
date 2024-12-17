@@ -35,7 +35,18 @@ runs:
         $payload = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("{`"iat`":$iat,`"exp`":$exp,`"iss`":`"${{ inputs.app_id }}`"}")).Replace('+','-').Replace('/','_').Replace('=','')
 
         $headerPayload = "$header.$payload"
-        $signature = & openssl dgst -sha256 -sign private-key.pem -binary <<< $headerPayload | openssl base64 -A | ForEach-Object { $_ -replace '\+', '-' -replace '/', '_' -replace '=', '' }
+
+        # Save headerPayload to a temporary file
+        $headerPayload | Out-File -FilePath headerPayload.tmp -Encoding ascii
+
+        # Use openssl to sign the payload
+        $signature = & openssl dgst -sha256 -sign private-key.pem -binary -out - headerPayload.tmp | openssl base64 -A
+        $signature = $signature -replace '\+', '-' -replace '/', '_' -replace '=', ''
+
+        # Clean up temporary file
+        Remove-Item -Force headerPayload.tmp
+
+        # Combine the JWT
         echo "JWT=$headerPayload.$signature" | Out-File -FilePath $env:GITHUB_ENV -Append
 
     # Step 2: Retrieve Installation ID for the App
