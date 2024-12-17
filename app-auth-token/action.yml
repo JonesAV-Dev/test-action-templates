@@ -28,6 +28,13 @@ runs:
         # Write the private key to a file
         echo "${{ inputs.private_key }}" | Out-File -FilePath private-key.pem -Encoding ascii
 
+        # Validate private key file exists
+        if (-not (Test-Path private-key.pem)) 
+        {
+          Write-Error "Private key file was not created."
+          exit 1
+        }
+
         # Create JWT header & payload
         $header = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes('{"alg":"RS256","typ":"JWT"}')).Replace('+','-').Replace('/','_').Replace('=','')
         $iat = [int][double]::Parse((Get-Date -UFormat %s)) - 60
@@ -36,18 +43,31 @@ runs:
 
         $headerPayload = "$header.$payload"
 
-        # Save headerPayload to a temporary file
-        $headerPayload | Out-File -FilePath headerPayload.tmp -Encoding ascii
-
-        # Use openssl to sign the payload
-        $signature = & openssl dgst -sha256 -sign private-key.pem -binary -out - headerPayload.tmp | openssl base64 -A
-        $signature = $signature -replace '\+', '-' -replace '/', '_' -replace '=', ''
-
-        # Clean up temporary file
-        Remove-Item -Force headerPayload.tmp
+        # Sign the payload
+        try 
+        {
+          $headerPayload | Out-File -FilePath headerPayload.tmp -Encoding ascii
+          $signature = & openssl dgst -sha256 -sign private-key.pem -binary headerPayload.tmp | openssl base64 -A
+          if (-not $signature) 
+          {
+            Write-Error "Failed to sign JWT payload."
+            exit 1
+          }
+          $signature = $signature -replace '\+', '-' -replace '/', '_' -replace '=', ''
+        }
+        catch 
+        {
+          Write-Error "Error during JWT signing: $_"
+          exit 1
+        }
 
         # Combine the JWT
-        echo "JWT=$headerPayload.$signature" | Out-File -FilePath $env:GITHUB_ENV -Append
+        $jwt = "$headerPayload.$signature"
+        Write-Host "Generated JWT: $jwt"  # Optional for debugging
+        echo "JWT=$jwt" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+        # Clean up
+        Remove-Item -Force headerPayload.tmp
 
     # Step 2: Retrieve Installation ID for the App
     - name: Get Installation ID
