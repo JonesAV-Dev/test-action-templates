@@ -59,12 +59,24 @@ runs:
           -H "Accept: application/vnd.github+json" `
           https://api.github.com/app/installations
 
-        $installId = ($response | ConvertFrom-Json) | Where-Object { $_.account.login -eq "${{ inputs.organisation }}" } | Select-Object -ExpandProperty id
-        if (-not $installId) 
+        Write-Host "API Response: $response"
+
+        # Parse JSON and retrieve the first installation ID
+        $installations = $response | ConvertFrom-Json
+        if (-not $installations) 
         {
-          Write-Error "Installation ID not found for organisation '${{ inputs.organisation }}'."
+          Write-Error "No installations found. Ensure the app is installed on the repository."
           exit 1
         }
+
+        $installId = $installations[0].id
+        if (-not $installId) 
+        {
+          Write-Error "Failed to retrieve installation ID from the response."
+          exit 1
+        }
+
+        Write-Host "Installation ID: $installId"
         echo "INSTALLATION_ID=$installId" | Out-File -FilePath $env:GITHUB_ENV -Append
 
     # Step 3: Retrieve Installation Token
