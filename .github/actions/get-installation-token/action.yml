@@ -11,7 +11,7 @@ inputs:
 
 outputs:
   token:
-    description: The instalation access token. 
+    description: The installation access token.
 
 runs:
   using: "composite"
@@ -51,15 +51,15 @@ runs:
           -H "Accept: application/vnd.github+json" \
           https://api.github.com/app/installations/$INSTALLATION_ID/access_tokens)
 
-        # Debug: Log the full response
-        echo "TOKEN_RESPONSE=$TOKEN_RESPONSE"
-
         TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.token')
 
         if [ "$TOKEN" == "null" ]; then
           echo "Failed to retrieve installation token. Response: $TOKEN_RESPONSE"
           exit 1
         fi
+
+        # Debug: Log the token
+        echo "Debug: TOKEN=$TOKEN"
 
         # Output the token
         echo "token=$TOKEN" >> "${GITHUB_OUTPUT}"
