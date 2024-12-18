@@ -62,4 +62,4 @@ runs:
         fi
 
         # Output the token
-        echo "token=$TOKEN" >> $GITHUB_OUTPUT
+        echo "token=$TOKEN" >> "${GITHUB_OUTPUT}"
