@@ -1,0 +1,19 @@
+name: Get Installation Access Token
+description: Generates an installation access token using a GitHub App.
+
+inputs:
+  app_id:
+    description: GitHub App ID
+    required: true
+  private_key:
+    description: Private key of the GitHub App
+    required: true
+
+outputs:
+  token:
+    description: The instalation access token. 
+
+runs:
+  using: "composite"
+  shell: bash
+  run: ./entrypoint.sh
