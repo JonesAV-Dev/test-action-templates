@@ -15,5 +15,47 @@ outputs:
 
 runs:
   using: "composite"
-  shell: bash
-  run: ./entrypoint.sh
+  steps:
+    - name: Generate JWT and Installation Token
+      shell: bash
+      run: |
+        # Write the private key to a file
+        echo "${{ inputs.private_key }}" > private-key.pem
+        sed -i 's/\r$//g' private-key.pem
+
+        # Generate JWT
+        HEADER=$(echo -n '{"alg":"RS256","typ":"JWT"}' | openssl base64 -A | tr '+/' '-_' | tr -d '=')
+        IAT=$(date +%s)
+        IAT=$((IAT - 60))
+        EXP=$((IAT + 600))
+        PAYLOAD=$(printf '{"iat":%d,"exp":%d,"iss":"%s"}' $IAT $EXP "${{ inputs.app_id }}" | openssl base64 -A | tr '+/' '-_' | tr -d '=')
+        HEADER_PAYLOAD="$HEADER.$PAYLOAD"
+        SIGNATURE=$(echo -n "$HEADER_PAYLOAD" | openssl dgst -sha256 -sign private-key.pem | openssl base64 -A | tr '+/' '-_' | tr -d '=')
+        JWT="$HEADER_PAYLOAD.$SIGNATURE"
+
+        # Get Installation ID
+        INSTALLATION_RESPONSE=$(curl -s -X GET \
+          -H "Authorization: Bearer $JWT" \
+          -H "Accept: application/vnd.github+json" \
+          https://api.github.com/app/installations)
+        INSTALLATION_ID=$(echo "$INSTALLATION_RESPONSE" | jq -r '.[0].id')
+
+        if [ "$INSTALLATION_ID" == "null" ]; then
+          echo "No installations found. Make sure the app is installed on the target repo."
+          exit 1
+        fi
+
+        # Get Installation Access Token
+        TOKEN_RESPONSE=$(curl -s -X POST \
+          -H "Authorization: Bearer $JWT" \
+          -H "Accept: application/vnd.github+json" \
+          https://api.github.com/app/installations/$INSTALLATION_ID/access_tokens)
+        TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.token')
+
+        if [ "$TOKEN" == "null" ]; then
+          echo "Failed to retrieve installation token. Response: $TOKEN_RESPONSE"
+          exit 1
+        fi
+
+        # Output the token
+        echo "token=$TOKEN" >> $GITHUB_OUTPUT
