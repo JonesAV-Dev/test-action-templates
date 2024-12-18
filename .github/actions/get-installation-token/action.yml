@@ -19,6 +19,8 @@ runs:
     - name: Generate JWT and Installation Token
       shell: bash
       run: |
+        set -e
+
         # Write the private key to a file
         echo "${{ inputs.private_key }}" > private-key.pem
         sed -i 's/\r$//g' private-key.pem
@@ -50,7 +52,6 @@ runs:
           -H "Authorization: Bearer $JWT" \
           -H "Accept: application/vnd.github+json" \
           https://api.github.com/app/installations/$INSTALLATION_ID/access_tokens)
-
         TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.token')
 
         if [ "$TOKEN" == "null" ]; then
@@ -62,4 +63,4 @@ runs:
         echo "Debug: TOKEN=$TOKEN"
 
         # Output the token
-        echo "token=$TOKEN" >> "${GITHUB_OUTPUT}"
+        echo "::set-output name=token::$TOKEN"
